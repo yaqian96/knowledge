@@ -3,6 +3,7 @@ import type { Client } from 'langsmith';
 
 let client: Client | undefined;
 let streamTextFn: typeof ai.streamText = ai.streamText;
+let generateTextFn: typeof ai.generateText = ai.generateText;
 let initialized = false;
 
 export function isLangSmithEnabled(): boolean {
@@ -48,11 +49,16 @@ export function initLangSmithTracing(): boolean {
   client = new LangSmithClient();
   const wrapped = wrapAISDK(ai, { client });
   streamTextFn = wrapped.streamText;
+  generateTextFn = wrapped.generateText;
   return true;
 }
 
 export function getStreamText() {
   return streamTextFn;
+}
+
+export function getGenerateText() {
+  return generateTextFn;
 }
 
 export function getLangSmithClient() {

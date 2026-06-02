@@ -73,13 +73,14 @@ export class AiService implements OnModuleInit {
       const { createLangSmithProviderOptions } = await import(
         'langsmith/experimental/vercel'
       );
+      const knowledgeChunks = Array.isArray(knowledge) ? knowledge.length : 0;
       streamOptions.providerOptions = {
         langsmith: createLangSmithProviderOptions({
           name: 'knowledge-chat',
           metadata: {
             user_id: userId,
             conversation_id: conversationId,
-            knowledge_chunks: knowledge.length,
+            knowledge_chunks: knowledgeChunks,
           },
           tags: ['knowledge-base', 'qwen-plus'],
         }),

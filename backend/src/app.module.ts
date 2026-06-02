@@ -9,9 +9,9 @@ import { FileModule } from './modules/file/file.module';
 import { MemoryModule } from './modules/memory/memory.module';
 import { AiModule } from './modules/ai/ai.module';
 import { VoiceModule } from './modules/voice/voice.module';
-import { IngestModule } from './modules/ingest/ingest.module';
-import { SourceConnectorModule } from './modules/source-connector/source-connector.module';
 import { LangSmithModule } from './modules/langsmith/langsmith.module';
+import { SourceConnectorModule } from './modules/source-connector/source-connector.module';
+import { BabyTripModule } from './modules/baby-trip/baby-trip.module';
 
 @Module({
   imports: [
@@ -28,9 +28,9 @@ import { LangSmithModule } from './modules/langsmith/langsmith.module';
     MemoryModule,
     AiModule,
     VoiceModule,
-    IngestModule,
-    SourceConnectorModule,
     LangSmithModule,
+    SourceConnectorModule,
+    BabyTripModule,
   ],
 })
 export class AppModule {}

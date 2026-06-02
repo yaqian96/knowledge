@@ -53,6 +53,31 @@ export class VoiceGateway {
   private splitSentences(text: string): string[] {
     // Split by Chinese sentence terminators
     const parts = text.split(/(?<=[。！？.!?])/);
-    return parts.filter(p => p.trim().length > 0);
+    const filtered = parts.filter(p => p.trim().length > 0);
+
+    // Further split any sentence that's still too long for Tencent TTS (max ~1024 chars)
+    const MAX_CHARS = 800;
+    const result: string[] = [];
+    for (const sentence of filtered) {
+      if (sentence.length <= MAX_CHARS) {
+        result.push(sentence.trim());
+      } else {
+        // Split long sentences at punctuation or word boundaries
+        const subParts = sentence.split(/(?<=[，,、；;：:])/);
+        let chunk = '';
+        for (const part of subParts) {
+          if ((chunk + part).length > MAX_CHARS && chunk.length > 0) {
+            result.push(chunk.trim());
+            chunk = part;
+          } else {
+            chunk += part;
+          }
+        }
+        if (chunk.trim().length > 0) {
+          result.push(chunk.trim());
+        }
+      }
+    }
+    return result;
   }
 }

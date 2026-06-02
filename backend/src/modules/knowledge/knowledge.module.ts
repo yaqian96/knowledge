@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
-import { SearchModule } from '../search/search.module';
+import { EmbeddingModule } from '../embedding/embedding.module';
 import { KnowledgeService } from './knowledge.service';
 import { KnowledgeController } from './knowledge.controller';
 
 @Module({
-  imports: [SearchModule],
+  imports: [EmbeddingModule],
   controllers: [KnowledgeController],
   providers: [KnowledgeService],
   exports: [KnowledgeService],

@@ -17,26 +17,6 @@ services:
     volumes:
       - redisdata:/data
 
-  elasticsearch:
-    # 勿用 docker.elastic.co（国内常 EOF）
-    # 在项目根目录 .env 设置 ES_IMAGE 切换镜像，例如：
-    # ES_IMAGE=docker.m.daocloud.io/library/elasticsearch:8.11.0
-    image: ${ES_IMAGE:-elasticsearch:8.11.0}
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-    ports:
-      - "9200:9200"
-    volumes:
-      - esdata:/usr/share/elasticsearch/data
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-
 volumes:
   pgdata:
   redisdata:
-  esdata:

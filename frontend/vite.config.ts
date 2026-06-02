@@ -15,6 +15,7 @@ export default defineConfig({
       '/files': backend,
       '/ai': backend,
       '/voice': backend,
+      '/baby-trip': backend,
       '/ws': { target: 'ws://localhost:3000', ws: true },
     },
   },

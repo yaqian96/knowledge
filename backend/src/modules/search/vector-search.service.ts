@@ -18,6 +18,7 @@ export class VectorSearchService {
     const queryEmbedding = await this.embeddingService.getEmbedding(query);
     const embeddingString = `[${queryEmbedding.join(',')}]`;
 
+    // 使用原生 vector 类型，HNSW 索引会自动加速余弦相似度搜索
     const rows = await this.prisma.$queryRaw<
       {
         id: string;

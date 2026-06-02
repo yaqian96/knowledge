@@ -1,21 +1,23 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Layout, Button, Input, message, Modal, List, Tag, Space, Upload, Progress, Tooltip,
-  Select, Switch, Divider,
+  Select, Switch, Divider, Tabs,
 } from 'antd';
 import {
   PlusOutlined, SendOutlined, InboxOutlined, MessageOutlined,
   DeleteOutlined, PaperClipOutlined, AudioOutlined, StopOutlined,
   SoundOutlined, ReloadOutlined, CloudSyncOutlined, AudioMutedOutlined,
-  PauseCircleOutlined,
+  PauseCircleOutlined, HeartOutlined,
 } from '@ant-design/icons';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import { Popconfirm } from 'antd';
 import { API_BASE, getWsBase } from './config';
+import BabyTripPanel from './components/BabyTripPanel';
 
 const { Sider, Content } = Layout;
 const { TextArea } = Input;
+const { TabPane } = Tabs;
 
 interface Conversation {
   id: string;
@@ -54,6 +56,7 @@ function App() {
   const [youdaoCronPreset, setYoudaoCronPreset] = useState<string>('1h');
   const [youdaoLastSyncAt, setYoudaoLastSyncAt] = useState<string | null>(null);
   const [youdaoScheduleSaving, setYoudaoScheduleSaving] = useState(false);
+  const [mainTab, setMainTab] = useState('chat');
 
   const YOUDAO_CRON_PRESETS = [
     { label: '每 1 小时', value: '0 */1 * * *', key: '1h' },
@@ -121,22 +124,27 @@ function App() {
       setTimeout(connectVoiceWs, 3000);
     };
     ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'tts_chunk' && data.audio) {
-          playAudioBase64Ref.current(data.audio);
-        } else if (data.type === 'tts_complete') {
-          skipMuteOnceRef.current = false;
-          setIsPlayingTts(false);
-          ttsProcessingRef.current = false;
-        } else if (data.type === 'tts_error') {
-          console.error('TTS error:', data.message);
-          ttsProcessingRef.current = false;
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'tts_chunk' && data.audio) {
+            playAudioBase64Ref.current(data.audio);
+          } else if (data.type === 'tts_complete') {
+            skipMuteOnceRef.current = false;
+            setIsPlayingTts(false);
+            ttsProcessingRef.current = false;
+          } else if (data.type === 'tts_error') {
+            console.error('TTS error:', data.message);
+            ttsProcessingRef.current = false;
+            setIsPlayingTts(false);
+            setActiveTtsText('');
+          } else if (data.type === 'tts_start') {
+            audioQueueRef.current = [];
+            audioPlayingRef.current = false;
+          }
+        } catch (e) {
+          // Binary data or parsing error
         }
-      } catch (e) {
-        // Binary data or parsing error
-      }
-    };
+      };
     setVoiceWs(ws);
   };
 
@@ -284,13 +292,14 @@ function App() {
     }
   }, []);
 
-  const handleReplayOrStop = useCallback((text: string) => {
-    if (activeTtsText === text && isPlayingTts) {
-      stopTts();
-    } else {
-      replayTts(text);
-    }
-  }, [activeTtsText, isPlayingTts, stopTts, replayTts]);
+  const handleReplay = useCallback((text: string) => {
+    // 从头开始重新播放
+    stopTts();
+    setTimeout(() => {
+      skipMuteOnceRef.current = true;
+      sendTtsToWs(text);
+    }, 300);
+  }, [stopTts, sendTtsToWs]);
 
   const startRecording = async () => {
     try {
@@ -800,157 +809,176 @@ function App() {
         </div>
       </Sider>
       <Layout>
-        <Content style={{ padding: 24, background: '#f5f5f5', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ flex: 1, overflowY: 'auto', marginBottom: 16 }}>
-            {messages.map(msg => (
-              <div
-                key={msg.id}
-                style={{
-                  padding: '12px 16px',
-                  marginBottom: 8,
-                  background: msg.role === 'user' ? '#e6f7ff' : '#fff',
-                  borderRadius: 8,
-                  maxWidth: '80%',
-                  marginLeft: msg.role === 'user' ? 'auto' : 0,
-                  marginRight: msg.role === 'user' ? 0 : 'auto',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <span style={{ fontWeight: 500, color: msg.role === 'user' ? '#1890ff' : '#52c41a' }}>
-                    {msg.role === 'user' ? '我' : '助手'}
-                  </span>
-                  {msg.role === 'assistant' && msg.content && (
-                    <Space size={4}>
-                      <Tooltip title={isMuted ? '取消静音' : '静音'}>
-                        <Button
-                          type="text"
-                          size="small"
-                          icon={isMuted ? <SoundOutlined /> : <AudioMutedOutlined />}
-                          onClick={toggleMute}
-                          style={{
-                            padding: 0,
-                            color: isMuted ? '#ff9800' : '#8c8c8c',
-                          }}
-                        />
-                      </Tooltip>
-                      <Tooltip
-                        title={
-                          activeTtsText === msg.content && isPlayingTts
-                            ? '停止播放'
-                            : '重新播放'
-                        }
-                      >
-                        <Button
-                          type="text"
-                          size="small"
-                          icon={
-                            activeTtsText === msg.content && isPlayingTts ? (
-                              <PauseCircleOutlined />
-                            ) : (
-                              <ReloadOutlined />
-                            )
-                          }
-                          onClick={() => handleReplayOrStop(msg.content)}
-                          style={{
-                            padding: 0,
-                            color:
-                              activeTtsText === msg.content && isPlayingTts
-                                ? '#ff4d4f'
-                                : '#999',
-                          }}
-                        />
-                      </Tooltip>
-                    </Space>
-                  )}
-                </div>
-                {msg.role === 'assistant' ? (
-                  msg.content ? (
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
-                  ) : (
-                    <span style={{ color: '#999' }}>思考中...</span>
-                  )
-                ) : (
-                  msg.content
-                )}
+        <Tabs
+          activeKey={mainTab}
+          onChange={setMainTab}
+          tabBarStyle={{ margin: 0, padding: '0 16px', background: '#fff' }}
+          style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
+        >
+          <TabPane
+            tab={
+              <span>
+                <MessageOutlined /> AI 对话
+              </span>
+            }
+            key="chat"
+          >
+            <Content style={{ padding: 24, background: '#f5f5f5', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ flex: 1, overflowY: 'auto', marginBottom: 16 }}>
+                {messages.map(msg => (
+                  <div
+                    key={msg.id}
+                    style={{
+                      padding: '12px 16px',
+                      marginBottom: 8,
+                      background: msg.role === 'user' ? '#e6f7ff' : '#fff',
+                      borderRadius: 8,
+                      maxWidth: '80%',
+                      marginLeft: msg.role === 'user' ? 'auto' : 0,
+                      marginRight: msg.role === 'user' ? 0 : 'auto',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <span style={{ fontWeight: 500, color: msg.role === 'user' ? '#1890ff' : '#52c41a' }}>
+                        {msg.role === 'user' ? '我' : '助手'}
+                      </span>
+                      {msg.role === 'assistant' && msg.content && (
+                        <Space size={4}>
+                          <Tooltip title={isMuted ? '取消静音' : '静音'}>
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={isMuted ? <SoundOutlined /> : <AudioMutedOutlined />}
+                              onClick={toggleMute}
+                              style={{
+                                padding: 0,
+                                color: isMuted ? '#ff9800' : '#8c8c8c',
+                              }}
+                            />
+                          </Tooltip>
+                          {activeTtsText === msg.content && isPlayingTts && (
+                            <Tooltip title="停止播放">
+                              <Button
+                                type="text"
+                                size="small"
+                                icon={<StopOutlined />}
+                                onClick={stopTts}
+                                style={{ padding: 0, color: '#ff4d4f' }}
+                              />
+                            </Tooltip>
+                          )}
+                          <Tooltip title="重新播放">
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<ReloadOutlined />}
+                              onClick={() => handleReplay(msg.content)}
+                              style={{ padding: 0, color: '#999' }}
+                            />
+                          </Tooltip>
+                        </Space>
+                      )}
+                    </div>
+                    {msg.role === 'assistant' ? (
+                      msg.content ? (
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      ) : (
+                        <span style={{ color: '#999' }}>思考中...</span>
+                      )
+                    ) : (
+                      msg.content
+                    )}
+                  </div>
+                ))}
+                <div ref={messagesEndRef} />
               </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-          
-          <div style={{ background: '#fff', padding: '12px 16px', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              <Button 
-                icon={<PaperClipOutlined />} 
-                onClick={() => fileInputRef.current?.click()}
-                loading={uploading}
-                size="small"
-              >
-                上传文档
-              </Button>
-              <Button 
-                icon={<SoundOutlined />} 
-                onClick={() => setUploadModalVisible(true)}
-                size="small"
-              >
-                查看知识库
-              </Button>
-              <Button
-                icon={<CloudSyncOutlined />}
-                onClick={openYoudaoModal}
-                size="small"
-              >
-                有道云笔记
-              </Button>
-              <Button
-                icon={isRecording ? <StopOutlined /> : <AudioOutlined />}
-                type={isRecording ? 'primary' : 'default'}
-                danger={isRecording}
-                onClick={isRecording ? stopRecording : startRecording}
-                size="small"
-              >
-                {isRecording ? '停止录音' : '语音输入'}
-              </Button>
-              <Select
-                value={voiceType}
-                onChange={setVoiceType}
-                options={voiceOptions}
-                size="small"
-                style={{ width: 120 }}
-              />
-              {uploadProgress > 0 && <Progress percent={uploadProgress} size="small" style={{ width: 120 }} />}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.gif,.webp"
-                multiple
-                onChange={async (e) => {
-                  const files = Array.from(e.target.files || []);
-                  if (files.length > 1) {
-                    await handleBatchUpload(files.map(f => ({ originFileObj: f })));
-                  } else if (files.length === 1) {
-                    await handleFileUpload(files[0]);
-                  }
-                  e.target.value = '';
-                }}
-                style={{ display: 'none' }}
-              />
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <TextArea
-                value={inputText}
-                onChange={e => setInputText(e.target.value)}
-                onPressEnter={e => !e.shiftKey && (e.preventDefault(), sendMessage())}
-                placeholder="输入消息，按 Enter 发送，Shift + Enter 换行"
-                autoSize={{ minRows: 2, maxRows: 6 }}
-                style={{ flex: 1 }}
-              />
-              <Button type="primary" icon={<SendOutlined />} onClick={sendMessage} loading={loading}>
-                发送
-              </Button>
-            </div>
-          </div>
-        </Content>
+              
+              <div style={{ background: '#fff', padding: '12px 16px', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <Button 
+                    icon={<PaperClipOutlined />} 
+                    onClick={() => fileInputRef.current?.click()}
+                    loading={uploading}
+                    size="small"
+                  >
+                    上传文档
+                  </Button>
+                  <Button 
+                    icon={<SoundOutlined />} 
+                    onClick={() => setUploadModalVisible(true)}
+                    size="small"
+                  >
+                    查看知识库
+                  </Button>
+                  <Button
+                    icon={<CloudSyncOutlined />}
+                    onClick={openYoudaoModal}
+                    size="small"
+                  >
+                    有道云笔记
+                  </Button>
+                  <Button
+                    icon={isRecording ? <StopOutlined /> : <AudioOutlined />}
+                    type={isRecording ? 'primary' : 'default'}
+                    danger={isRecording}
+                    onClick={isRecording ? stopRecording : startRecording}
+                    size="small"
+                  >
+                    {isRecording ? '停止录音' : '语音输入'}
+                  </Button>
+                  <Select
+                    value={voiceType}
+                    onChange={setVoiceType}
+                    options={voiceOptions}
+                    size="small"
+                    style={{ width: 120 }}
+                  />
+                  {uploadProgress > 0 && <Progress percent={uploadProgress} size="small" style={{ width: 120 }} />}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.gif,.webp"
+                    multiple
+                    onChange={async (e) => {
+                      const files = Array.from(e.target.files || []);
+                      if (files.length > 1) {
+                        await handleBatchUpload(files.map(f => ({ originFileObj: f })));
+                      } else if (files.length === 1) {
+                        await handleFileUpload(files[0]);
+                      }
+                      e.target.value = '';
+                    }}
+                    style={{ display: 'none' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <TextArea
+                    value={inputText}
+                    onChange={e => setInputText(e.target.value)}
+                    onPressEnter={e => !e.shiftKey && (e.preventDefault(), sendMessage())}
+                    placeholder="输入消息，按 Enter 发送，Shift + Enter 换行"
+                    autoSize={{ minRows: 2, maxRows: 6 }}
+                    style={{ flex: 1 }}
+                  />
+                  <Button type="primary" icon={<SendOutlined />} onClick={sendMessage} loading={loading}>
+                    发送
+                  </Button>
+                </div>
+              </div>
+            </Content>
+          </TabPane>
+          <TabPane
+            tab={
+              <span>
+                <HeartOutlined /> 溜娃助手
+              </span>
+            }
+            key="babytrip"
+          >
+            <BabyTripPanel />
+          </TabPane>
+        </Tabs>
       </Layout>
 
       <Modal

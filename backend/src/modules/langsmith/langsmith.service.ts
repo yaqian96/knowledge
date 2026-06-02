@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import {
   flushLangSmithTraces,
+  getGenerateText,
   getLangSmithClient,
   getStreamText,
   initLangSmithTracing,
@@ -37,6 +38,10 @@ export class LangSmithService implements OnModuleInit {
 
   getStreamText() {
     return getStreamText();
+  }
+
+  getGenerateText() {
+    return getGenerateText();
   }
 
   getClient() {
