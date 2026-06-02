@@ -5,11 +5,13 @@
 ## 功能特性
 
 - 文档上传（PDF、Excel、图片）
+- **有道云笔记同步**（Cookie 连接，全量/定时入库）
 - 智能文档解析与分块
 - 基于知识库的 RAG 问答
 - 双层记忆架构（Redis 短期 + PostgreSQL 长期）
 - 会话历史管理
 - 流式响应支持
+- **LangSmith** 追踪 RAG 检索与 LLM 调用
 
 ## 技术栈
 
@@ -56,10 +58,69 @@ npx prisma generate
 
 ### 4. 配置环境变量
 
-编辑 `backend/.env` 文件，设置你的 OpenAI API Key：
-
+```bash
+cd backend
+copy .env.example .env   # Windows
+# cp .env.example .env   # Linux/macOS
 ```
-OPENAI_API_KEY=your-api-key-here
+
+编辑 `backend/.env`，至少配置 `DATABASE_URL`、`DASHSCOPE_API_KEY`。  
+有道同步还需 `ENCRYPTION_KEY`（自行生成的随机串，见 `.env.example` 内说明，**不是**从有道网站查询）。
+
+### LangSmith 可观测性（可选）
+
+在 [smith.langchain.com](https://smith.langchain.com/) 创建 API Key 后，于 `backend/.env` 配置：
+
+```env
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_pt_xxx
+LANGSMITH_PROJECT=knowledge-base
+```
+
+启动后端后发起一次对话，在 LangSmith 项目中可看到：
+
+- `knowledge-hybrid-search`：ES + 向量 + RRF + Rerank 检索
+- `knowledge-chat`：通义千问 `streamText` 流式生成
+
+未配置 API Key 时自动关闭追踪，不影响业务。
+
+### 有道云笔记同步
+
+1. 执行迁移后启动后端，前端点击 **有道云笔记**
+2. 浏览器登录 [note.youdao.com](https://note.youdao.com)，F12 → Network 复制 Cookie 与 `cstk` 参数
+3. 保存连接 → **立即同步全部笔记**，笔记将分块写入知识库并参与 RAG 检索
+4. 服务运行期间按 `SyncJob.cronExpr` 自动同步（**BullMQ + Redis**，默认每小时）
+
+### 定时同步引擎（BullMQ，仿 OpenClaw Cron）
+
+| 层级 | 作用 | 本项目对应 |
+|------|------|------------|
+| **任务定义持久化** | 重启不丢调度配置 | PostgreSQL `SyncJob` + `backend/data/sync-cron-jobs.json` |
+| **调度引擎** | 按 cron 触发 | BullMQ `repeat.pattern` + 时区 |
+| **执行队列** | 异步、可重试 | Redis 队列 `source-sync` + Worker |
+| **执行体** | 真正拉取笔记 | `SyncOrchestratorService.syncUserProvider` |
+
+环境变量见 `backend/.env.example` 中 `SYNC_CRON_*`。修改 cron：
+
+```bash
+PATCH /sources/sync/jobs/{syncJobId}
+Header: x-user-id: demo-user
+Body: { "cronExpr": "0 */2 * * *", "enabled": true }
+```
+
+从 DB 重建 BullMQ 与本地 json：`POST /sources/sync/reconcile`
+
+API 示例：
+
+```bash
+# 保存凭据
+POST /sources/youdao/credentials
+Header: x-user-id: demo-user
+Body: { "cookie": "...", "cstk": "..." }
+
+# 同步全部笔记
+POST /sources/youdao/sync
+Body: { "syncAll": true }
 ```
 
 ### 5. 启动服务

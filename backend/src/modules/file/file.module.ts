@@ -4,6 +4,7 @@ import { diskStorage } from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
 import { EmbeddingModule } from '../embedding/embedding.module';
+import { IngestModule } from '../ingest/ingest.module';
 import { FileService } from './file.service';
 import { FileController } from './file.controller';
 
@@ -45,6 +46,7 @@ if (!fs.existsSync(uploadDir)) {
       },
     }),
     EmbeddingModule,
+    IngestModule,
   ],
   controllers: [FileController],
   providers: [FileService],

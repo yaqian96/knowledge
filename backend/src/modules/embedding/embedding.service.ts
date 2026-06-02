@@ -18,9 +18,11 @@ export class EmbeddingService {
         },
         {
           headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
+            Authorization: `Bearer ${this.apiKey}`,
             'Content-Type': 'application/json',
           },
+          proxy: false,
+          timeout: 60000,
         },
       );
 
@@ -37,12 +39,35 @@ export class EmbeddingService {
 
   async batchEmbedding(texts: string[]): Promise<number[][]> {
     const embeddings: number[][] = [];
-    
-    for (const text of texts) {
-      const embedding = await this.getEmbedding(text);
-      embeddings.push(embedding);
+    const batchSize = 10;
+
+    for (let i = 0; i < texts.length; i += batchSize) {
+      const batch = texts.slice(i, i + batchSize).map((t) => t.slice(0, 8000));
+      const response = await axios.post(
+        this.apiUrl,
+        {
+          model: 'text-embedding-v1',
+          input: { texts: batch },
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          proxy: false,
+          timeout: 60000,
+        },
+      );
+
+      if (response.data?.output?.embeddings) {
+        for (const item of response.data.output.embeddings) {
+          embeddings.push(item.embedding);
+        }
+      } else {
+        throw new Error('Failed to get batch embedding');
+      }
     }
-    
+
     return embeddings;
   }
 }

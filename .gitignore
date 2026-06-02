@@ -48,5 +48,8 @@ lerna-debug.log*
 # Test coverage
 coverage/
 
+# BullMQ cron runtime store (definitions synced from DB)
+backend/data/sync-cron-jobs.json
+
 # Misc
 *.local

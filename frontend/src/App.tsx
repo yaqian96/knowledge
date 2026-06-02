@@ -1,13 +1,18 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Layout, Button, Input, message, Modal, List, Tag, Space, Upload, Progress } from 'antd';
+import {
+  Layout, Button, Input, message, Modal, List, Tag, Space, Upload, Progress, Tooltip,
+  Select, Switch, Divider,
+} from 'antd';
 import {
   PlusOutlined, SendOutlined, InboxOutlined, MessageOutlined,
   DeleteOutlined, PaperClipOutlined, AudioOutlined, StopOutlined,
-  SoundOutlined, ReloadOutlined,
+  SoundOutlined, ReloadOutlined, CloudSyncOutlined, AudioMutedOutlined,
+  PauseCircleOutlined,
 } from '@ant-design/icons';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
-import { Popconfirm, Select } from 'antd';
+import { Popconfirm } from 'antd';
+import { API_BASE, getWsBase } from './config';
 
 const { Sider, Content } = Layout;
 const { TextArea } = Input;
@@ -25,8 +30,6 @@ interface MessageItem {
   createdAt: string;
 }
 
-const API_BASE = 'http://localhost:3000';
-const WS_BASE = 'ws://localhost:3000';
 const USER_ID = 'demo-user';
 
 function App() {
@@ -39,6 +42,28 @@ function App() {
   const [knowledgeList, setKnowledgeList] = useState<any[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [youdaoModalVisible, setYoudaoModalVisible] = useState(false);
+  const [youdaoCookie, setYoudaoCookie] = useState('');
+  const [youdaoCstk, setYoudaoCstk] = useState('');
+  const [youdaoSyncing, setYoudaoSyncing] = useState(false);
+  const [youdaoConnected, setYoudaoConnected] = useState(false);
+  const [youdaoNoteCount, setYoudaoNoteCount] = useState(0);
+  const [youdaoSyncJobId, setYoudaoSyncJobId] = useState<string | null>(null);
+  const [youdaoCronEnabled, setYoudaoCronEnabled] = useState(true);
+  const [youdaoCronExpr, setYoudaoCronExpr] = useState('0 */1 * * *');
+  const [youdaoCronPreset, setYoudaoCronPreset] = useState<string>('1h');
+  const [youdaoLastSyncAt, setYoudaoLastSyncAt] = useState<string | null>(null);
+  const [youdaoScheduleSaving, setYoudaoScheduleSaving] = useState(false);
+
+  const YOUDAO_CRON_PRESETS = [
+    { label: '每 1 小时', value: '0 */1 * * *', key: '1h' },
+    { label: '每 2 小时', value: '0 */2 * * *', key: '2h' },
+    { label: '每 6 小时', value: '0 */6 * * *', key: '6h' },
+    { label: '每 12 小时', value: '0 */12 * * *', key: '12h' },
+    { label: '每天 8:00', value: '0 8 * * *', key: 'daily8' },
+    { label: '每天 0:00', value: '0 0 * * *', key: 'daily0' },
+    { label: '自定义', value: '', key: 'custom' },
+  ] as const;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -61,6 +86,7 @@ function App() {
   const audioPlayingRef = useRef(false);
   const lastTtsTextRef = useRef<string>('');
   const currentTtsTextRef = useRef<string>('');
+  const skipMuteOnceRef = useRef(false);
 
   const voiceOptions = [
     { label: '智云(女)', value: 101001 },
@@ -88,7 +114,7 @@ function App() {
   }, [messages]);
 
   const connectVoiceWs = () => {
-    const ws = new WebSocket(`${WS_BASE}/ws/tts`);
+    const ws = new WebSocket(`${getWsBase()}/ws/tts`);
     ws.onopen = () => console.log('Voice WS connected');
     ws.onclose = () => {
       console.log('Voice WS disconnected, reconnecting...');
@@ -100,6 +126,7 @@ function App() {
         if (data.type === 'tts_chunk' && data.audio) {
           playAudioBase64Ref.current(data.audio);
         } else if (data.type === 'tts_complete') {
+          skipMuteOnceRef.current = false;
           setIsPlayingTts(false);
           ttsProcessingRef.current = false;
         } else if (data.type === 'tts_error') {
@@ -144,7 +171,8 @@ function App() {
     try {
       const audio = new Audio();
       audio.src = `data:audio/mp3;base64,${base64}`;
-      audio.muted = isMutedRef.current;
+      audio.muted = isMutedRef.current && !skipMuteOnceRef.current;
+      audio.volume = audio.muted ? 0 : 1;
       currentAudioRef.current = audio;
 
       const onEnded = () => {
@@ -193,6 +221,7 @@ function App() {
 
   const stopTts = useCallback(() => {
     ttsCancelRef.current = true;
+    skipMuteOnceRef.current = false;
     ttsQueueRef.current = [];
     ttsProcessingRef.current = false;
     setIsPlayingTts(false);
@@ -236,6 +265,7 @@ function App() {
     // 延迟后重新发送
     setTimeout(() => {
       ttsCancelRef.current = false;
+      skipMuteOnceRef.current = true;
       setIsPlayingTts(true);
       setActiveTtsText(text);
       currentTtsTextRef.current = text;
@@ -247,8 +277,10 @@ function App() {
     const newMuted = !isMutedRef.current;
     isMutedRef.current = newMuted;
     setIsMuted(newMuted);
+    skipMuteOnceRef.current = false;
     if (currentAudioRef.current) {
       currentAudioRef.current.muted = newMuted;
+      currentAudioRef.current.volume = newMuted ? 0 : 1;
     }
   }, []);
 
@@ -584,6 +616,154 @@ function App() {
     }
   };
 
+  const checkYoudaoConnection = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/sources/youdao/notes`, {
+        headers: { 'x-user-id': USER_ID },
+      });
+      setYoudaoConnected(res.data.connected);
+      setYoudaoNoteCount(res.data.total ?? 0);
+    } catch (error: any) {
+      setYoudaoConnected(false);
+      setYoudaoNoteCount(0);
+      const msg = error.response?.data?.message;
+      if (msg) message.error(msg);
+    }
+  };
+
+  const resolveCronPreset = (cronExpr: string) => {
+    const found = YOUDAO_CRON_PRESETS.find((p) => p.value === cronExpr);
+    return found?.key ?? 'custom';
+  };
+
+  const loadYoudaoSyncConfig = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/sources/youdao/sync-config`, {
+        headers: { 'x-user-id': USER_ID },
+      });
+      const job = res.data.job;
+      if (job) {
+        setYoudaoSyncJobId(job.id);
+        setYoudaoCronEnabled(job.enabled);
+        const expr = job.cronExpr || res.data.defaultCronExpr || '0 */1 * * *';
+        setYoudaoCronExpr(expr);
+        setYoudaoCronPreset(resolveCronPreset(expr));
+        setYoudaoLastSyncAt(job.lastSyncAt ?? null);
+      } else {
+        setYoudaoSyncJobId(null);
+        setYoudaoCronEnabled(true);
+        const expr = res.data.defaultCronExpr || '0 */1 * * *';
+        setYoudaoCronExpr(expr);
+        setYoudaoCronPreset(resolveCronPreset(expr));
+        setYoudaoLastSyncAt(null);
+      }
+    } catch {
+      /* 未连接时忽略 */
+    }
+  };
+
+  const openYoudaoModal = async () => {
+    setYoudaoModalVisible(true);
+    await Promise.all([checkYoudaoConnection(), loadYoudaoSyncConfig()]);
+  };
+
+  const handleCronPresetChange = (key: string) => {
+    setYoudaoCronPreset(key);
+    const preset = YOUDAO_CRON_PRESETS.find((p) => p.key === key);
+    if (preset && preset.key !== 'custom') {
+      setYoudaoCronExpr(preset.value);
+    }
+  };
+
+  const saveYoudaoSchedule = async () => {
+    if (!youdaoSyncJobId) {
+      message.warning('请先保存连接，再配置定时同步');
+      return;
+    }
+    const expr = youdaoCronExpr.trim();
+    if (!expr.split(/\s+/).length || expr.split(/\s+/).length < 5) {
+      message.warning('请输入有效的 cron 表达式（5 段）');
+      return;
+    }
+    setYoudaoScheduleSaving(true);
+    try {
+      const res = await axios.patch(
+        `${API_BASE}/sources/sync/jobs/${youdaoSyncJobId}`,
+        { enabled: youdaoCronEnabled, cronExpr: expr },
+        { headers: { 'x-user-id': USER_ID } },
+      );
+      setYoudaoCronExpr(res.data.cronExpr);
+      setYoudaoCronEnabled(res.data.enabled);
+      setYoudaoCronPreset(resolveCronPreset(res.data.cronExpr));
+      message.success('定时同步已保存');
+    } catch (error: any) {
+      message.error(error.response?.data?.message || '保存定时配置失败');
+    } finally {
+      setYoudaoScheduleSaving(false);
+    }
+  };
+
+  const saveYoudaoCredentials = async () => {
+    if (!youdaoCookie.trim() || !youdaoCstk.trim()) {
+      message.warning('请填写 Cookie 和 cstk');
+      return;
+    }
+    try {
+      await axios.post(
+        `${API_BASE}/sources/youdao/credentials`,
+        { cookie: youdaoCookie.trim(), cstk: youdaoCstk.trim() },
+        { headers: { 'x-user-id': USER_ID } },
+      );
+      message.success('有道云笔记已连接');
+      await Promise.all([checkYoudaoConnection(), loadYoudaoSyncConfig()]);
+    } catch (error: any) {
+      message.error(error.response?.data?.message || '保存凭据失败');
+    }
+  };
+
+  const syncYoudaoNotes = async () => {
+    setYoudaoSyncing(true);
+    try {
+      const res = await axios.post(
+        `${API_BASE}/sources/youdao/sync`,
+        { syncAll: true, batchSize: 3, batchDelayMs: 800 },
+        { headers: { 'x-user-id': USER_ID }, timeout: 600000 },
+      );
+      const errPreview = res.data.errors?.length
+        ? res.data.errors.slice(0, 3).map((e: { title: string; error: string }) => `${e.title}: ${e.error}`).join('；')
+        : '';
+      if (res.data.succeeded > 0) {
+        message.success(
+          `同步完成：成功 ${res.data.succeeded}/${res.data.total} 篇` +
+            (res.data.failed > 0 ? `，失败 ${res.data.failed} 篇` : ''),
+        );
+      } else {
+        message.error(
+          `同步失败：成功 0/${res.data.total} 篇` + (errPreview ? `。${errPreview}` : ''),
+          8,
+        );
+      }
+      await loadKnowledgeList();
+      await Promise.all([checkYoudaoConnection(), loadYoudaoSyncConfig()]);
+    } catch (error: any) {
+      message.error(error.response?.data?.message || '同步失败');
+    } finally {
+      setYoudaoSyncing(false);
+    }
+  };
+
+  const sourceTagColor = (provider?: string) => {
+    if (provider === 'youdao') return 'green';
+    if (provider === 'feishu') return 'blue';
+    return 'default';
+  };
+
+  const sourceLabel = (provider?: string) => {
+    if (provider === 'youdao') return '有道';
+    if (provider === 'feishu') return '飞书';
+    return '本地上传';
+  };
+
   return (
     <Layout style={{ height: '100vh' }}>
       <Sider width={300} style={{ background: '#fff', borderRight: '1px solid #f0f0f0' }}>
@@ -642,28 +822,45 @@ function App() {
                   </span>
                   {msg.role === 'assistant' && msg.content && (
                     <Space size={4}>
-                      {activeTtsText === msg.content && isPlayingTts && (
+                      <Tooltip title={isMuted ? '取消静音' : '静音'}>
                         <Button
                           type="text"
                           size="small"
-                          icon={isMuted ? <SoundOutlined /> : <StopOutlined />}
+                          icon={isMuted ? <SoundOutlined /> : <AudioMutedOutlined />}
                           onClick={toggleMute}
                           style={{
                             padding: 0,
-                            color: isMuted ? '#ff9800' : '#ff4d4f',
+                            color: isMuted ? '#ff9800' : '#8c8c8c',
                           }}
                         />
-                      )}
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={activeTtsText === msg.content && isPlayingTts ? <StopOutlined /> : <ReloadOutlined />}
-                        onClick={() => handleReplayOrStop(msg.content)}
-                        style={{
-                          padding: 0,
-                          color: activeTtsText === msg.content && isPlayingTts ? '#ff4d4f' : '#999',
-                        }}
-                      />
+                      </Tooltip>
+                      <Tooltip
+                        title={
+                          activeTtsText === msg.content && isPlayingTts
+                            ? '停止播放'
+                            : '重新播放'
+                        }
+                      >
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={
+                            activeTtsText === msg.content && isPlayingTts ? (
+                              <PauseCircleOutlined />
+                            ) : (
+                              <ReloadOutlined />
+                            )
+                          }
+                          onClick={() => handleReplayOrStop(msg.content)}
+                          style={{
+                            padding: 0,
+                            color:
+                              activeTtsText === msg.content && isPlayingTts
+                                ? '#ff4d4f'
+                                : '#999',
+                          }}
+                        />
+                      </Tooltip>
                     </Space>
                   )}
                 </div>
@@ -697,6 +894,13 @@ function App() {
                 size="small"
               >
                 查看知识库
+              </Button>
+              <Button
+                icon={<CloudSyncOutlined />}
+                onClick={openYoudaoModal}
+                size="small"
+              >
+                有道云笔记
               </Button>
               <Button
                 icon={isRecording ? <StopOutlined /> : <AudioOutlined />}
@@ -771,6 +975,7 @@ function App() {
                 </Popconfirm>,
               ]}
             >
+              <Tag color={sourceTagColor(item.sourceProvider)}>{sourceLabel(item.sourceProvider)}</Tag>
               <Tag color="blue">{item.fileType}</Tag>
               <span style={{ marginLeft: 8, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {item.filename}
@@ -781,6 +986,121 @@ function App() {
             </List.Item>
           )}
         />
+      </Modal>
+
+      <Modal
+        title="有道云笔记同步"
+        open={youdaoModalVisible}
+        onCancel={() => setYoudaoModalVisible(false)}
+        footer={null}
+        width={560}
+      >
+        <p style={{ color: '#666', fontSize: 13, marginBottom: 16 }}>
+          在浏览器打开{' '}
+          <a href="https://note.youdao.com" target="_blank" rel="noreferrer">
+            note.youdao.com
+          </a>
+          ，登录后按 F12 → Network，任选请求复制 Cookie，并从 URL 或请求参数中找到 cstk。
+        </p>
+        {youdaoConnected && (
+          <p style={{ marginBottom: 12 }}>
+            已连接，检测到约 <strong>{youdaoNoteCount}</strong> 篇笔记可同步。
+          </p>
+        )}
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ marginBottom: 4 }}>Cookie</div>
+          <TextArea
+            value={youdaoCookie}
+            onChange={e => setYoudaoCookie(e.target.value)}
+            placeholder="YNOTE_SESS=...; ..."
+            autoSize={{ minRows: 2, maxRows: 4 }}
+          />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 4 }}>cstk</div>
+          <Input
+            value={youdaoCstk}
+            onChange={e => setYoudaoCstk(e.target.value)}
+            placeholder="从请求参数 keyfrom=web&cstk= 后复制"
+          />
+        </div>
+        <Divider style={{ margin: '16px 0' }}>定时自动同步</Divider>
+        <div
+          style={{
+            marginBottom: 12,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <span>启用定时同步</span>
+          <Switch
+            checked={youdaoCronEnabled}
+            onChange={setYoudaoCronEnabled}
+            disabled={!youdaoSyncJobId}
+          />
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ marginBottom: 4 }}>同步频率</div>
+          <Select
+            style={{ width: '100%' }}
+            value={youdaoCronPreset}
+            onChange={handleCronPresetChange}
+            disabled={!youdaoSyncJobId}
+            options={YOUDAO_CRON_PRESETS.map((p) => ({
+              label: p.label,
+              value: p.key,
+            }))}
+          />
+        </div>
+        {youdaoCronPreset === 'custom' && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 4 }}>Cron 表达式</div>
+            <Input
+              value={youdaoCronExpr}
+              onChange={(e) => setYoudaoCronExpr(e.target.value)}
+              placeholder="0 */1 * * *"
+              disabled={!youdaoSyncJobId}
+            />
+          </div>
+        )}
+        {youdaoCronPreset !== 'custom' && (
+          <p style={{ color: '#999', fontSize: 12, marginBottom: 12 }}>
+            当前规则：<code>{youdaoCronExpr}</code>
+          </p>
+        )}
+        {youdaoLastSyncAt && (
+          <p style={{ color: '#999', fontSize: 12, marginBottom: 12 }}>
+            上次同步：{new Date(youdaoLastSyncAt).toLocaleString()}
+          </p>
+        )}
+        <Button
+          block
+          onClick={saveYoudaoSchedule}
+          loading={youdaoScheduleSaving}
+          disabled={!youdaoSyncJobId}
+          style={{ marginBottom: 16 }}
+        >
+          保存定时设置
+        </Button>
+
+        <Space wrap>
+          <Button type="primary" onClick={saveYoudaoCredentials}>
+            保存连接
+          </Button>
+          <Button
+            type="primary"
+            icon={<CloudSyncOutlined />}
+            loading={youdaoSyncing}
+            onClick={syncYoudaoNotes}
+            disabled={!youdaoConnected}
+          >
+            立即同步全部笔记
+          </Button>
+        </Space>
+        <p style={{ color: '#999', fontSize: 12, marginTop: 16 }}>
+          凭据加密保存在服务端；定时任务由 BullMQ 调度（需 Redis 与后端常驻运行）。
+        </p>
       </Modal>
     </Layout>
   );

@@ -14,7 +14,7 @@ export class KnowledgeController {
   async search(
     @Headers('x-user-id') userId: string,
     @Query('q') query: string,
-    @Query('limit') limit: number = 5,
+    @Query('limit') limit: number = 8,
   ) {
     return this.knowledgeService.searchRelevant(query, userId, limit);
   }
