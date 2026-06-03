@@ -62,12 +62,25 @@ export class MemoryService {
     });
   }
 
-  async getContextForQuery(conversationId: string) {
+  async getContextForQuery(
+    conversationId: string,
+    options?: { lightweight?: boolean },
+  ) {
     const shortTerm = await this.getShortTermMemory(conversationId);
+    const messages = shortTerm?.messages || [];
+
+    if (options?.lightweight && messages.length > 0) {
+      return {
+        shortTerm: messages,
+        longTerm: [],
+        summary: shortTerm?.summary || '',
+      };
+    }
+
     const longTerm = await this.getLongTermMemory(conversationId);
-    
+
     return {
-      shortTerm: shortTerm?.messages || [],
+      shortTerm: messages,
       longTerm,
       summary: shortTerm?.summary || '',
     };

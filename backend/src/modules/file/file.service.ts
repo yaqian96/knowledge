@@ -1,6 +1,8 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmbeddingService } from '../embedding/embedding.service';
+import { ChunkIndexService, ChunkRow } from '../search/chunk-index.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as pdfParse from 'pdf-parse';
@@ -11,6 +13,7 @@ export class FileService {
   constructor(
     private prisma: PrismaService,
     private embeddingService: EmbeddingService,
+    private chunkIndexService: ChunkIndexService,
   ) {}
 
   async uploadFile(userId: string, file: Express.Multer.File) {
@@ -33,7 +36,15 @@ export class FileService {
       },
     });
 
-    await this.createDocumentVectors(document.id, chunks);
+    await this.createDocumentVectors(
+      {
+        id: document.id,
+        userId: document.userId,
+        filename: document.filename,
+        fileType: document.fileType,
+      },
+      chunks,
+    );
 
     return document;
   }
@@ -228,17 +239,35 @@ export class FileService {
     return sizes[fileType] || 800;
   }
 
-  private async createDocumentVectors(documentId: string, chunks: any[]): Promise<void> {
+  private async createDocumentVectors(
+    document: { id: string; userId: string; filename: string; fileType: string },
+    chunks: { content: string }[],
+  ): Promise<void> {
+    const chunkRows: ChunkRow[] = [];
+
     for (let index = 0; index < chunks.length; index++) {
       const chunk = chunks[index];
+      const id = randomUUID();
       const embedding = await this.embeddingService.getEmbedding(chunk.content);
-      
-      // Use raw query to properly cast to vector type
+
       await this.prisma.$executeRaw`
         INSERT INTO "DocumentVector" ("id", "documentId", "chunkIndex", "content", "embedding")
-        VALUES (gen_random_uuid(), ${documentId}, ${index}, ${chunk.content}, ${JSON.stringify(embedding)}::vector(1536))
+        VALUES (${id}, ${document.id}, ${index}, ${chunk.content}, ${JSON.stringify(embedding)}::vector(1536))
       `;
+
+      chunkRows.push({ id, chunkIndex: index, content: chunk.content });
     }
+
+    await this.chunkIndexService.indexDocumentChunks(
+      {
+        id: document.id,
+        userId: document.userId,
+        filename: document.filename,
+        fileType: document.fileType,
+        sourceProvider: 'upload',
+      },
+      chunkRows,
+    );
   }
 
   private getFileType(filename: string): string {

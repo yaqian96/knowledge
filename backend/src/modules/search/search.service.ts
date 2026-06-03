@@ -10,7 +10,9 @@ import { RankedChunk, SearchOptions } from './types/search.types';
 export class SearchService {
   private readonly logger = new Logger(SearchService.name);
   private readonly kBm25 = Number(process.env.SEARCH_K_BM25 ?? 30);
-  private readonly kVector = Number(process.env.SEARCH_K_VECTOR ?? 30);
+  private readonly kVector = Number(
+    process.env.SEARCH_K_VECTOR ?? process.env.SEARCH_VECTOR_TOP_K ?? 30,
+  );
   private readonly rrfK = Number(process.env.SEARCH_RRF_K ?? 60);
   private readonly rrfTopN = Number(process.env.SEARCH_RRF_TOP_N ?? 20);
   private readonly rerankTopM = Number(process.env.SEARCH_RERANK_TOP_M ?? 8);
