@@ -38,6 +38,10 @@ export interface TraceRecord {
   startedAt: string;
   completedAt?: string;
   totalDuration?: number;
+  task?: {
+    title: string;
+    status: string;
+  };
 }
 
 export const executeBabyTrip = (request: BabyTripRequest) =>

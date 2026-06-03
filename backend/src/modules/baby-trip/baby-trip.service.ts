@@ -385,6 +385,7 @@ ${spots.map(s => `- ${s.name} (${s.distance}km), ${s.ticketPrice}, 适合${s.age
   async getTrace(taskId: string, userId: string) {
     return this.prisma.babyTripTrace.findFirst({
       where: { taskId, userId },
+      include: { task: true },
     });
   }
 

@@ -87,7 +87,7 @@ export default function BabyTripPanel() {
 
   const fetchCityName = async (lat: number, lng: number) => {
     try {
-      const res = await fetch(`https://restapi.amap.com/v3/geocode/regeo?key=${process.env.VITE_AMAP_KEY || ''}&location=${lng},${lat}`);
+      const res = await fetch(`https://restapi.amap.com/v3/geocode/regeo?key=${import.meta.env.VITE_AMAP_KEY || ''}&location=${lng},${lat}`);
       const data = await res.json();
       if (data.status === '1' && data.regeocode) {
         setUserLocation(prev => prev ? { ...prev, city: data.regeocode.addressComponent.city || data.regeocode.addressComponent.province } : null);
