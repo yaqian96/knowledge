@@ -18,6 +18,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { wrapYoudaoApiError } from './youdao-api.error';
 import { SyncCronScheduler } from '../scheduler/sync-cron.scheduler';
 import { SyncCronStore } from '../scheduler/sync-cron.store';
+import { YoudaoCookieConnector } from './providers/youdao/youdao-cookie.connector';
+
+class PasteYoudaoCookieDto {
+  @IsString()
+  @IsNotEmpty()
+  cookie: string;
+}
 
 class SaveYoudaoCredentialDto {
   @IsString()
@@ -83,6 +90,44 @@ export class SourceController {
     @Param('id') id: string,
   ) {
     return this.credentialService.deleteAccount(userId, id);
+  }
+
+  @Post('youdao/login')
+  async pasteYoudaoCookie(
+    @Headers('x-user-id') userId: string,
+    @Body() dto: PasteYoudaoCookieDto,
+  ) {
+    if (!userId?.trim()) {
+      throw new BadRequestException('缺少请求头 x-user-id');
+    }
+    await this.ensureUser(userId.trim());
+
+    // Auto-extract cstk from the cookie string
+    const { cookie, cstk } = YoudaoCookieConnector.parseCookieAndCstK(
+      dto.cookie.trim(),
+    );
+
+    const account = await this.credentialService.saveCredential(
+      userId,
+      'youdao',
+      'cookie',
+      { cookie, cstk },
+    );
+
+    const syncJob = await this.prisma.syncJob.upsert({
+      where: { userId_provider: { userId, provider: 'youdao' } },
+      create: { userId, provider: 'youdao', enabled: true },
+      update: { enabled: true },
+    });
+
+    await this.syncCronScheduler.reconcileJob(syncJob.id);
+
+    return {
+      id: account.id,
+      provider: account.provider,
+      authMethod: account.authMethod,
+      message: '有道云笔记已连接',
+    };
   }
 
   @Post('youdao/credentials')

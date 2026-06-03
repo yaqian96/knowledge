@@ -46,7 +46,6 @@ function App() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [youdaoModalVisible, setYoudaoModalVisible] = useState(false);
   const [youdaoCookie, setYoudaoCookie] = useState('');
-  const [youdaoCstk, setYoudaoCstk] = useState('');
   const [youdaoSyncing, setYoudaoSyncing] = useState(false);
   const [youdaoConnected, setYoudaoConnected] = useState(false);
   const [youdaoNoteCount, setYoudaoNoteCount] = useState(0);
@@ -712,18 +711,19 @@ function App() {
     }
   };
 
-  const saveYoudaoCredentials = async () => {
-    if (!youdaoCookie.trim() || !youdaoCstk.trim()) {
-      message.warning('请填写 Cookie 和 cstk');
+  const saveYoudaoCookie = async () => {
+    if (!youdaoCookie.trim()) {
+      message.warning('请粘贴浏览器中的 Cookie');
       return;
     }
     try {
       await axios.post(
-        `${API_BASE}/sources/youdao/credentials`,
-        { cookie: youdaoCookie.trim(), cstk: youdaoCstk.trim() },
+        `${API_BASE}/sources/youdao/login`,
+        { cookie: youdaoCookie.trim() },
         { headers: { 'x-user-id': USER_ID } },
       );
       message.success('有道云笔记已连接');
+      setYoudaoCookie('');
       await Promise.all([checkYoudaoConnection(), loadYoudaoSyncConfig()]);
     } catch (error: any) {
       message.error(error.response?.data?.message || '保存凭据失败');
@@ -1023,35 +1023,39 @@ function App() {
         footer={null}
         width={560}
       >
-        <p style={{ color: '#666', fontSize: 13, marginBottom: 16 }}>
-          在浏览器打开{' '}
-          <a href="https://note.youdao.com" target="_blank" rel="noreferrer">
-            note.youdao.com
-          </a>
-          ，登录后按 F12 → Network，任选请求复制 Cookie，并从 URL 或请求参数中找到 cstk。
-        </p>
         {youdaoConnected && (
           <p style={{ marginBottom: 12 }}>
             已连接，检测到约 <strong>{youdaoNoteCount}</strong> 篇笔记可同步。
           </p>
         )}
-        <div style={{ marginBottom: 12 }}>
+        <p style={{ color: '#666', fontSize: 13, marginBottom: 16 }}>
+          打开{' '}
+          <a href="https://note.youdao.com" target="_blank" rel="noreferrer">
+            note.youdao.com
+          </a>
+          ，登录后按 <strong>F12</strong> → <strong>Network（网络）</strong>，刷新页面后任选一个请求，
+          在 <strong>Request Headers（请求头）</strong> 中找到 <code>Cookie:</code> 整行，复制粘贴到下方。
+        </p>
+        <div style={{ marginBottom: 16 }}>
           <div style={{ marginBottom: 4 }}>Cookie</div>
           <TextArea
             value={youdaoCookie}
             onChange={e => setYoudaoCookie(e.target.value)}
-            placeholder="YNOTE_SESS=...; ..."
-            autoSize={{ minRows: 2, maxRows: 4 }}
+            placeholder="YNOTE_SESS=...; YNOTE_CSTK=...; ..."
+            autoSize={{ minRows: 3, maxRows: 6 }}
           />
+          <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>
+            系统会自动从 Cookie 中提取 cstk，无需手动查找
+          </div>
         </div>
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ marginBottom: 4 }}>cstk</div>
-          <Input
-            value={youdaoCstk}
-            onChange={e => setYoudaoCstk(e.target.value)}
-            placeholder="从请求参数 keyfrom=web&cstk= 后复制"
-          />
-        </div>
+        <Button
+          type="primary"
+          block
+          onClick={saveYoudaoCookie}
+          style={{ marginBottom: 8 }}
+        >
+          保存并连接
+        </Button>
         <Divider style={{ margin: '16px 0' }}>定时自动同步</Divider>
         <div
           style={{
@@ -1112,20 +1116,17 @@ function App() {
           保存定时设置
         </Button>
 
-        <Space wrap>
-          <Button type="primary" onClick={saveYoudaoCredentials}>
-            保存连接
-          </Button>
-          <Button
-            type="primary"
-            icon={<CloudSyncOutlined />}
-            loading={youdaoSyncing}
-            onClick={syncYoudaoNotes}
-            disabled={!youdaoConnected}
-          >
-            立即同步全部笔记
-          </Button>
-        </Space>
+        <Button
+          type="primary"
+          icon={<CloudSyncOutlined />}
+          loading={youdaoSyncing}
+          onClick={syncYoudaoNotes}
+          disabled={!youdaoConnected}
+          block
+          style={{ marginBottom: 16 }}
+        >
+          立即同步全部笔记
+        </Button>
         <p style={{ color: '#999', fontSize: 12, marginTop: 16 }}>
           凭据加密保存在服务端；定时任务由 BullMQ 调度（需 Redis 与后端常驻运行）。
         </p>

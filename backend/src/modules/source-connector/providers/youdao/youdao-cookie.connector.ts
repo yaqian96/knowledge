@@ -87,10 +87,60 @@ export class YoudaoCookieConnector implements DocumentConnector {
 
   private resolveCreds(account: SourceAccount): YoudaoCredentials {
     const payload = this.credentialService.getPayload(account) as unknown as YoudaoCredentials;
-    if (!payload.cookie || !payload.cstk) {
-      throw new BadRequestException('有道云笔记凭据不完整，需要 cookie 和 cstk');
+    if (!payload.cookie) {
+      throw new BadRequestException('缺少 Cookie 凭据');
     }
-    return payload;
+
+    // If cstk is not stored, try to extract from cookie string
+    let cstk = payload.cstk;
+    if (!cstk) {
+      cstk = this.extractCstkFromCookie(payload.cookie);
+    }
+
+    if (!cstk) {
+      throw new BadRequestException('Cookie 中缺少 cstk，请重新连接');
+    }
+
+    return { cookie: payload.cookie, cstk };
+  }
+
+  /**
+   * Extract cstk from cookie string
+   * Cookie format: YNOTE_SESS=...; YNOTE_CSTK=xxx; ...
+   * Or from request params: keyfrom=web&cstk=xxx
+   */
+  private extractCstkFromCookie(cookie: string): string | undefined {
+    // Try to find YNOTE_CSTK in cookie
+    const cstkMatch = cookie.match(/YNOTE_CSTK=([^;]+)/);
+    if (cstkMatch) {
+      return cstkMatch[1];
+    }
+
+    // Try to find cstk in URL-encoded format
+    const urlCstkMatch = cookie.match(/cstk=([^;&]+)/);
+    if (urlCstkMatch) {
+      return urlCstkMatch[1];
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Parse a raw cookie string and extract both cookie and cstk
+   * Used by the login endpoint to auto-extract cstk
+   */
+  static parseCookieAndCstK(rawCookie: string): { cookie: string; cstk: string } {
+    const cstk = rawCookie.match(/YNOTE_CSTK=([^;]+)/)?.[1]
+      ?? rawCookie.match(/cstk=([^;&]+)/)?.[1];
+
+    if (!cstk) {
+      throw new BadRequestException(
+        '无法从 Cookie 中提取 cstk，请确保 Cookie 包含 YNOTE_CSTK 字段。' +
+        '请在浏览器 Network 中复制完整的 Cookie 值。',
+      );
+    }
+
+    return { cookie: rawCookie.trim(), cstk };
   }
 
   private async fetchRootId(client: AxiosInstance, cstk: string): Promise<string> {
@@ -199,7 +249,7 @@ export class YoudaoCookieConnector implements DocumentConnector {
 
     const downloadRes = await client.post(
       '/yws/api/personal/sync?method=download&_system=macos&_platform=web&_appName=ynote' +
-        `&keyfrom=web&sev=j1&cstk=${encodeURIComponent(creds.cstk)}`,
+        `&keyfrom=web&cstk=${encodeURIComponent(creds.cstk)}`,
       new URLSearchParams({
         method: 'download',
         fileId: target.externalId,
