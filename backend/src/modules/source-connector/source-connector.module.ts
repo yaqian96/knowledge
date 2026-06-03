@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { IngestModule } from '../ingest/ingest.module';
+import { DocumentImportModule } from '../document-import/document-import.module';
 import { ConnectorRegistry } from './connector.registry';
 import { CredentialService } from './credential.service';
 import { SyncOrchestratorService } from './sync-orchestrator.service';
@@ -10,7 +10,7 @@ import { YoudaoCookieConnector } from './providers/youdao/youdao-cookie.connecto
 import { YnoteContentParser } from './providers/youdao/ynote-content.parser';
 
 @Module({
-  imports: [IngestModule],
+  imports: [DocumentImportModule],
   controllers: [SourceController],
   providers: [
     CredentialService,

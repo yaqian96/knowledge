@@ -3,9 +3,7 @@ import { MulterModule } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
-import { EmbeddingModule } from '../embedding/embedding.module';
-import { SearchModule } from '../search/search.module';
-import { FileService } from './file.service';
+import { DocumentImportModule } from '../document-import/document-import.module';
 import { FileController } from './file.controller';
 
 const uploadDir = './uploads';
@@ -35,9 +33,19 @@ if (!fs.existsSync(uploadDir)) {
           'image/gif',
           'image/webp',
         ];
-        const allowedExts = ['.pdf', '.xlsx', '.xls', '.csv', '.png', '.jpg', '.jpeg', '.gif', '.webp'];
+        const allowedExts = [
+          '.pdf',
+          '.xlsx',
+          '.xls',
+          '.csv',
+          '.png',
+          '.jpg',
+          '.jpeg',
+          '.gif',
+          '.webp',
+        ];
         const ext = path.extname(file.originalname).toLowerCase();
-        
+
         if (allowedTypes.includes(file.mimetype) || allowedExts.includes(ext)) {
           cb(null, true);
         } else {
@@ -45,11 +53,8 @@ if (!fs.existsSync(uploadDir)) {
         }
       },
     }),
-    EmbeddingModule,
-    SearchModule,
+    DocumentImportModule,
   ],
   controllers: [FileController],
-  providers: [FileService],
-  exports: [FileService],
 })
 export class FileModule {}

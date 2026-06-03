@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConnectorRegistry } from './connector.registry';
 import { CredentialService } from './credential.service';
-import { DocumentIngestService } from '../ingest/document-ingest.service';
+import { DocumentImportHelper } from '../document-import/document-import.helper';
 import { RemoteTarget } from './types/connector.interface';
 
 export interface SyncOptions {
@@ -31,7 +31,7 @@ export class SyncOrchestratorService {
     private prisma: PrismaService,
     private registry: ConnectorRegistry,
     private credentialService: CredentialService,
-    private ingestService: DocumentIngestService,
+    private importHelper: DocumentImportHelper,
   ) {}
 
   async syncUserProvider(
@@ -166,16 +166,26 @@ export class SyncOrchestratorService {
         return;
       }
 
-      await this.ingestService.upsertByExternalId({
+      const imported = await this.importHelper.importOrUpdate({
         userId,
         title: doc.title,
         content: doc.content,
-        sourceProvider: provider,
+        source: provider as 'youdao',
         externalId: doc.externalId,
         externalUrl: doc.externalUrl,
         contentHash: doc.contentHash,
         fileType: 'markdown',
       });
+
+      if (!imported.success) {
+        result.failed++;
+        result.errors.push({
+          externalId: target.externalId,
+          title: target.title,
+          error: imported.error ?? '导入失败',
+        });
+        return;
+      }
 
       await this.prisma.syncTarget.upsert({
         where: {

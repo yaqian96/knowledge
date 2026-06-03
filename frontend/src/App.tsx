@@ -557,7 +557,7 @@ function App() {
           }
         },
       });
-      const successCount = res.data.results.filter((r: any) => r.success).length;
+      const successCount = res.data.succeeded ?? res.data.results.filter((r: any) => r.success).length;
       message.success(`上传完成: ${successCount}/${res.data.total} 成功`);
       await loadKnowledgeList();
     } catch (error) {
